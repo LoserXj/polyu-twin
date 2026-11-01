@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PolyU Twin</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="One drone survey of PolyU and Hung Hom builds a reality model, semantic labels and an automatically generated building model. Rooftop solar runs on top of it today; wind, energy and renovation come next.">
+<meta property="og:title" content="PolyU Twin · 城市分析，从一次无人机航测开始">
+<meta property="og:image" content="assets/hero.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@300;400;500&display=swap">
+<style>
+/* 参照 Nearmap：浅底 + 薄荷色带，电光蓝标题，细衬线大标题 + 无衬线正文，细线图标，发丝分隔，圆角图片，页脚大字标。
+   建筑模型一段用深蓝底，和夜色渲染图融在一起。刻意只做浅色品牌页，不跟随深色主题。 */
+:root {
+	color-scheme: light;
+	--blue: #3448ff;
+	--blue-ink: #2433d6;
+	--blue-soft: #9aa6ff;
+	--navy: #08112e;
+	--navy-2: #111b3f;
+	--text: #2b3350;
+	--mute: #5f6782;
+	--mint: #deeeef;
+	--paper: #ffffff;
+	--line: rgba(8, 17, 46, 0.12);
+	--line-dark: rgba(255, 255, 255, 0.14);
+	--serif: "Newsreader", "Noto Serif SC", "Songti SC", serif;
+	--sans: "DM Sans", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+	--gut-l: max(16px, env(safe-area-inset-left, 0px));
+	--gut-r: max(16px, env(safe-area-inset-right, 0px));
+	--wrap: 1200px;
+	--ease: cubic-bezier(.2, .7, .2, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+	margin: 0;
+	background: var(--paper);
+	color: var(--text);
+	font: 400 17px/1.7 var(--sans);
+	-webkit-font-smoothing: antialiased;
+}
+img { display: block; max-width: 100%; }
+a { color: inherit; }
+h1, h2, h3 { margin: 0; font-family: var(--serif); font-weight: 300; color: var(--navy); text-wrap: balance; }
+p { margin: 0; text-wrap: pretty; }
+.nw { display: inline-block; }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding-left: calc(var(--gut-l) + 16px); padding-right: calc(var(--gut-r) + 16px); }
+.label { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500; color: var(--blue); letter-spacing: 0.02em; }
+.label::before { content: ""; width: 28px; height: 1px; background: currentColor; }
+.center .label { justify-content: center; }
+
+/* 滚动淡入（无 JS 时直接显示） */
+.js .rise { opacity: 0; transform: translateY(18px); transition: opacity .9s var(--ease), transform .9s var(--ease); }
+.js .rise.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+	html { scroll-behavior: auto; }
+	.js .rise { opacity: 1; transform: none; transition: none; }
+}
+
+/* 顶栏 */
+header {
+	position: sticky; top: 0; z-index: 20;
+	background: rgba(255, 255, 255, 0.9);
+	backdrop-filter: saturate(1.4) blur(10px);
+	border-bottom: 1px solid transparent;
+	transition: border-color .2s;
+}
+header.scrolled { border-bottom-color: var(--line); }
+.bar { display: flex; align-items: center; gap: 32px; height: 72px; }
+.mark { font: 700 26px/1 var(--sans); letter-spacing: -0.035em; color: var(--blue); text-decoration: none; }
+.mark span { font-weight: 400; }
+header nav { display: flex; gap: 30px; margin-left: auto; font-size: 15px; }
+header nav a { text-decoration: none; color: var(--navy); position: relative; }
+header nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: var(--blue); transform: scaleX(0); transition: transform .25s var(--ease); }
+header nav a:hover { color: var(--blue); }
+header nav a:hover::after { transform: scaleX(1); }
+.btn {
+	display: inline-flex; align-items: center; gap: 8px;
+	height: 50px; padding: 0 28px; border-radius: 999px;
+	background: var(--blue); color: #fff; text-decoration: none;
+	font: 700 16px/1 var(--sans); border: 0; cursor: pointer;
+	transition: background .15s, transform .15s;
+}
+.btn:hover { background: var(--blue-ink); }
+.btn:active { transform: translateY(1px); }
+.btn.sm { height: 40px; padding: 0 20px; font-size: 15px; }
+.link { color: var(--blue); font-weight: 500; text-decoration: none; border-bottom: 1px solid rgba(52, 72, 255, 0.3); transition: border-color .15s; }
+.link:hover { border-bottom-color: var(--blue); }
+.link::after { content: " →"; }
+
+/* 首屏 */
+.hero { background: var(--mint); padding: 80px 0 0; }
+.hero-grid { display: grid; grid-template-columns: 5fr 6fr; gap: 64px; align-items: center; }
+.hero h1 { color: var(--blue); font-size: clamp(40px, 4.9vw, 66px); line-height: 1.12; letter-spacing: -0.02em; }
+.hero p { margin-top: 28px; max-width: 30em; font-size: 18px; color: var(--navy); }
+.hero .acts { display: flex; align-items: center; gap: 28px; margin-top: 40px; flex-wrap: wrap; }
+.hero figure { margin: 0; }
+.hero figure img { border-radius: 16px; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; box-shadow: 0 30px 60px -30px rgba(8, 17, 46, 0.45); }
+.hero figcaption { margin-top: 12px; font-size: 13px; color: var(--mute); }
+.figures { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 80px; border-top: 1px solid rgba(8, 17, 46, 0.14); }
+.figures > div { padding: 30px 24px 44px; border-left: 1px solid rgba(8, 17, 46, 0.14); }
+.figures > div:first-child { border-left: 0; padding-left: 0; }
+.figures b { display: block; font: 300 clamp(40px, 4.4vw, 60px)/1 var(--serif); color: var(--blue); letter-spacing: -0.02em; }
+.figures b small { font-size: 0.38em; margin-left: 6px; letter-spacing: 0; color: var(--navy); font-family: var(--sans); font-weight: 400; }
+.figures span { display: block; margin-top: 12px; font-size: 14px; color: var(--mute); }
+
+/* 居中标题段 */
+.center { text-align: center; padding-top: 128px; padding-bottom: 56px; }
+.center h2 { margin-top: 20px; font-size: clamp(34px, 4.2vw, 56px); line-height: 1.15; letter-spacing: -0.015em; }
+.center p { margin: 22px auto 0; max-width: 38em; color: var(--mute); }
+
+/* 四列底座 */
+.cols { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.cols > div { padding: 40px 28px 44px; border-left: 1px solid var(--line); }
+.cols > div:first-child { border-left: 0; padding-left: 0; }
+.cols svg { width: 52px; height: 52px; stroke: var(--blue); fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.cols h3 { margin-top: 26px; font-family: var(--sans); font-weight: 400; font-size: 26px; line-height: 1.25; letter-spacing: -0.01em; }
+.cols p { margin-top: 12px; font-size: 15px; color: var(--mute); }
+.cols .tag { display: inline-block; margin-top: 16px; font-size: 13px; color: var(--blue); text-decoration: none; }
+.cols .tag::after { content: " ↓"; }
+
+/* 前后对比图 */
+.showcase { padding-top: 72px; }
+.cmp {
+	position: relative; overflow: hidden; border-radius: 16px; background: #0b1220;
+	aspect-ratio: 16 / 9; touch-action: pan-y; cursor: ew-resize; user-select: none;
+	--k: 0.5;
+}
+.cmp img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.cmp img.after { clip-path: inset(0 0 0 calc(var(--k) * 100%)); }
+.cmp .rule { position: absolute; top: 0; bottom: 0; left: calc(var(--k) * 100%); width: 2px; margin-left: -1px; background: #fff; pointer-events: none; }
+.cmp .knob {
+	position: absolute; top: 50%; left: calc(var(--k) * 100%); transform: translate(-50%, -50%);
+	display: flex; align-items: center; justify-content: center; gap: 10px; height: 44px; min-width: 44px; padding: 0 18px; border-radius: 999px;
+	background: var(--blue); color: #fff; font: 700 15px/1 var(--sans); white-space: nowrap; pointer-events: none;
+	box-shadow: 0 6px 20px rgba(8, 17, 46, 0.3);
+}
+.cmp:focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+.cmp .lab {
+	position: absolute; bottom: 16px; padding: 6px 12px; border-radius: 999px;
+	background: rgba(255, 255, 255, 0.92); color: var(--navy); font-size: 13px; font-weight: 500; pointer-events: none;
+}
+.cmp .lab.l { left: 16px; }
+.cmp .lab.r { right: 16px; }
+
+/* 建筑模型：深蓝段 */
+.bim { margin-top: 128px; background: var(--navy); color: #c6cce3; padding: 120px 0 128px; }
+.bim .label { color: var(--blue-soft); }
+.bim h2 { margin-top: 20px; color: #fff; font-size: clamp(34px, 4.2vw, 56px); line-height: 1.15; letter-spacing: -0.015em; }
+.bim-head { display: grid; grid-template-columns: 6fr 5fr; gap: 72px; align-items: end; }
+.bim-head p { font-size: 17px; }
+.bim .cmp { margin-top: 64px; aspect-ratio: 16 / 10; background: #070c1c; }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 56px; border-top: 1px solid var(--line-dark); }
+.facts > div { padding: 30px 28px 0; border-left: 1px solid var(--line-dark); }
+.facts > div:first-child { border-left: 0; padding-left: 0; }
+.facts h3 { font-family: var(--sans); font-weight: 400; font-size: 22px; color: #fff; }
+.facts p { margin-top: 10px; font-size: 15px; color: #9ea6c4; }
+
+/* 光伏导览：标签页 */
+.tour-tabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 48px; }
+.tour-tabs button {
+	display: inline-flex; align-items: center; gap: 10px;
+	height: 46px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line);
+	background: var(--paper); color: var(--navy); font: 500 15px/1 var(--sans); cursor: pointer;
+	transition: background .2s, color .2s, border-color .2s;
+}
+.tour-tabs button i { font-style: normal; font-size: 12px; color: var(--mute); transition: color .2s; }
+.tour-tabs button:hover { border-color: var(--blue); }
+.tour-tabs button[aria-selected="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+.tour-tabs button[aria-selected="true"] i { color: rgba(255, 255, 255, 0.7); }
+.tour-tabs button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.panel { display: grid; grid-template-columns: 7fr 5fr; gap: 64px; align-items: center; }
+.panel[hidden] { display: none; }
+.panel.show { animation: fade .5s var(--ease); }
+@keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .panel.show { animation: none; } }
+.panel .media > img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 16px; }
+.panel .cmp { aspect-ratio: 16 / 10; }
+.panel h3 { font-size: clamp(28px, 2.8vw, 38px); line-height: 1.2; letter-spacing: -0.01em; }
+.panel .copy p { margin-top: 20px; }
+.panel .stat { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
+.panel .stat b { display: block; font: 300 52px/1 var(--serif); color: var(--blue); letter-spacing: -0.02em; }
+.panel .stat b small { font: 400 18px var(--sans); color: var(--navy); margin-left: 6px; letter-spacing: 0; }
+.panel .stat span { display: block; margin-top: 10px; font-size: 14px; color: var(--mute); }
+.tour-foot { margin-top: 28px; font-size: 13px; color: var(--mute); text-align: right; }
+
+/* 曲线 */
+.chart { border: 1px solid var(--line); border-radius: 16px; padding: 22px 22px 10px; background: var(--paper); }
+.chart-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--mute); flex-wrap: wrap; }
+.chart-head b { color: var(--navy); font-weight: 500; }
+.chart svg { display: block; width: 100%; height: auto; margin-top: 8px; }
+.chart .grid { stroke: var(--line); }
+.chart .ax { fill: var(--mute); font: 400 12px var(--sans); }
+.chart .area { fill: rgba(52, 72, 255, 0.10); }
+.chart .curve { fill: none; stroke: var(--blue); stroke-width: 2; stroke-linejoin: round; }
+.chart .peak { fill: var(--blue); }
+.chart .peak-t { fill: var(--navy); font: 500 12px var(--sans); }
+
+/* 下一步 */
+.next { margin-top: 128px; background: var(--mint); padding: 112px 0 120px; }
+.next-head { display: grid; grid-template-columns: 6fr 5fr; gap: 72px; align-items: end; }
+.next h2 { margin-top: 20px; font-size: clamp(34px, 4.2vw, 56px); line-height: 1.15; letter-spacing: -0.015em; }
+.next-head p { color: var(--navy); }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 56px; }
+.card { background: var(--paper); border-radius: 16px; overflow: hidden; transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
+.card:hover { transform: translateY(-4px); box-shadow: 0 24px 48px -28px rgba(8, 17, 46, 0.35); }
+.card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+.card .body { padding: 26px 26px 30px; }
+.card h3 { font-family: var(--sans); font-weight: 400; font-size: 24px; }
+.card p { margin-top: 10px; font-size: 15px; color: var(--mute); }
+.card .soon { display: inline-block; margin-top: 18px; font-size: 13px; color: var(--blue); font-weight: 500; }
+
+/* 路线 */
+.road { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+.road > div { padding: 32px 28px 0; border-left: 1px solid var(--line); position: relative; }
+.road > div:first-child { border-left: 0; padding-left: 0; }
+.road > div::before { content: ""; position: absolute; top: -5px; left: 28px; width: 9px; height: 9px; border-radius: 50%; background: var(--paper); border: 1px solid var(--blue); }
+.road > div:first-child::before { left: 0; background: var(--blue); }
+.road .when { font-size: 13px; font-weight: 500; color: var(--blue); }
+.road h3 { margin-top: 10px; font-family: var(--sans); font-weight: 400; font-size: 22px; }
+.road p { margin-top: 8px; font-size: 15px; color: var(--mute); }
+
+/* 结尾 */
+.end { text-align: center; padding: 136px 0 128px; }
+.end h2 { font-size: clamp(36px, 4.6vw, 62px); line-height: 1.12; color: var(--blue); }
+.end p { margin: 22px auto 0; max-width: 34em; color: var(--mute); }
+.end .acts { margin-top: 40px; display: flex; justify-content: center; }
+
+/* 页脚 */
+footer { border-top: 1px solid var(--line); padding: 56px 0 40px; overflow: hidden; }
+.wordmark { font: 700 clamp(64px, 17vw, 230px)/0.9 var(--sans); letter-spacing: -0.055em; color: var(--blue); white-space: nowrap; }
+.wordmark span { font-weight: 400; }
+.foot { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.7; color: var(--mute); }
+.foot b { color: var(--navy); font-weight: 500; }
+.legal { margin-top: 32px; display: flex; justify-content: space-between; font-size: 13px; color: var(--mute); }
+
+/* 窄屏 */
+@media (max-width: 960px) {
+	header nav { display: none; }
+	.bar { justify-content: space-between; }
+	.hero { padding-top: 40px; }
+	.hero-grid, .panel, .bim-head, .next-head { grid-template-columns: 1fr; gap: 32px; }
+	.figures { grid-template-columns: 1fr 1fr; margin-top: 56px; }
+	.figures > div:nth-child(3) { border-left: 0; padding-left: 0; }
+	.figures > div:nth-child(n+3) { border-top: 1px solid rgba(8, 17, 46, 0.14); }
+	.figures > div { padding-bottom: 28px; }
+	.cols { grid-template-columns: 1fr 1fr; }
+	.cols > div:nth-child(3) { border-left: 0; padding-left: 0; }
+	.cols > div:nth-child(n+3) { border-top: 1px solid var(--line); }
+	.facts, .road { grid-template-columns: 1fr; border-top: 0; }
+	.facts > div, .road > div { border-left: 0; padding: 24px 0; border-top: 1px solid var(--line-dark); }
+	.road > div { border-top-color: var(--line); }
+	.road > div::before { display: none; }
+	.cards { grid-template-columns: 1fr; }
+	.center { padding-top: 88px; }
+	.bim, .next { margin-top: 88px; padding: 80px 0 88px; }
+	.tour-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; margin-left: calc(-1 * var(--gut-l)); margin-right: calc(-1 * var(--gut-r)); padding: 0 var(--gut-r) 6px var(--gut-l); scrollbar-width: none; }
+	.tour-tabs button { flex: none; }
+	.foot { grid-template-columns: 1fr; gap: 16px; }
+	.cmp { aspect-ratio: 4 / 3; }
+	.bim .cmp, .panel .cmp { aspect-ratio: 4 / 3; }
+	.tour-foot { text-align: left; }
+}
+@media (max-width: 520px) {
+	.wrap { padding-left: var(--gut-l); padding-right: var(--gut-r); }
+	.cols { grid-template-columns: 1fr; }
+	.cols > div { border-left: 0 !important; padding: 32px 0 !important; }
+	.cols > div + div { border-top: 1px solid var(--line); }
+	.figures > div { padding: 22px 12px 22px; }
+	.figures > div:nth-child(odd) { padding-left: 0; }
+	.cmp .knob { height: 38px; min-width: 38px; padding: 0 14px; font-size: 13px; }
+	.legal { flex-direction: column; gap: 6px; }
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add( 'js' );</script>
+
+<header>
+	<div class="wrap bar">
+		<a class="mark" href="#top">PolyU<span>Twin</span></a>
+		<nav aria-label="Sections">
+			<a href="#base">数据底座</a><a href="#bim">建筑模型</a><a href="#solar">屋顶光伏</a><a href="#next">更多分析</a>
+		</nav>
+		<a class="btn sm" href="#contact">预约演示</a>
+	</div>
+</header>
+
+<main id="top">
+	<section class="hero" aria-labelledby="hero-title">
+		<div class="wrap">
+			<div class="hero-grid">
+				<div>
+					<h1 id="hero-title"><span class="nw">城市分析，</span><span class="nw">从一次无人机</span><span class="nw">航测开始</span></h1>
+					<p>飞一遍理大校园和红磡街区，平台就生成实景三维、逐面的语义标签和建筑模型。屋顶光伏的选址、排布、发电预测和巡检，都在这套数据上完成。</p>
+					<div class="acts">
+						<a class="btn" href="#contact">预约演示</a>
+						<a class="link" href="#base">看看平台怎么工作</a>
+					</div>
+				</div>
+				<figure>
+					<img src="assets/hero.webp" alt="PolyU campus reality model in the afternoon, installed PV modules lit by their output" fetchpriority="high">
+					<figcaption>理大校园，下午两点。屋面组件按实时出力着色。</figcaption>
+				</figure>
+			</div>
+			<div class="figures" role="list">
+				<div role="listitem"><b>70<small>公顷</small></b><span>一次航测覆盖</span></div>
+				<div role="listitem"><b>147<small>万</small></b><span>个网格面，逐面计算与标注</span></div>
+				<div role="listitem"><b>6.0<small>MWp</small></b><span>屋顶可装光伏容量</span></div>
+				<div role="listitem"><b>7.6<small>GWh</small></b><span>全年发电量（物理模拟）</span></div>
+			</div>
+		</div>
+	</section>
+
+	<section id="base" aria-labelledby="base-title">
+		<div class="wrap center rise">
+			<div class="label">数据底座</div>
+			<h2 id="base-title"><span class="nw">数据只采一次，</span><span class="nw">分析可以一直做</span></h2>
+			<p>四层基础数据建好之后，每个分析模块都直接读取同一份网格、标签和构件，不用再派人上楼测量。</p>
+		</div>
+		<div class="wrap rise">
+			<div class="cols">
+				<div>
+					<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M8 40V14h9v24h9V14h9v24h9V14"/><circle cx="44" cy="14" r="3"/><circle cx="8" cy="40" r="2"/></svg>
+					<h3>航线规划</h3>
+					<p>框出测区，自动生成蛇形航线和五镜头拍照点。</p>
+				</div>
+				<div>
+					<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M26 6 44 16v20L26 46 8 36V16Z"/><path d="M8 16l18 10 18-10M26 26v20"/><path d="M17 11l18 10M35 11 17 21" opacity=".55"/></svg>
+					<h3>实景三维</h3>
+					<p>航测纹理网格，以 3D Tiles 在浏览器里流式加载。</p>
+				</div>
+				<div>
+					<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M6 18 26 8l20 10-20 10Z"/><path d="M6 26l20 10 20-10"/><path d="M6 34l20 10 20-10"/></svg>
+					<h3>语义分割</h3>
+					<p>网格上每个面都标出类别，认错的地方框选一下即可修正。</p>
+				</div>
+				<div>
+					<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M12 46V12l14-6 14 6v34"/><path d="M6 46h40"/><path d="M18 18h4M30 18h4M18 26h4M30 26h4M18 34h4M30 34h4"/><path d="M23 46v-6h6v6"/></svg>
+					<h3>建筑模型</h3>
+					<p>从实景自动生成参数化建筑模型，导出 IFC。</p>
+					<a class="tag" href="#bim">看看怎么生成</a>
+				</div>
+			</div>
+		</div>
+		<div class="wrap showcase rise">
+			<div class="cmp" data-cmp tabindex="0" role="slider" aria-label="Compare the flight plan view with the reality model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+				<img src="assets/survey.webp" alt="Drone flying a snake route over the white massing model" loading="lazy">
+				<img class="after" src="assets/mesh.webp" alt="The same campus as a textured reality mesh" loading="lazy">
+				<i class="rule" aria-hidden="true"></i>
+				<span class="knob" aria-hidden="true">‹ 拖动对比 ›</span>
+				<span class="lab l">航线与白模</span><span class="lab r">飞完之后的实景三维</span>
+			</div>
+		</div>
+	</section>
+
+	<section class="bim" id="bim" aria-labelledby="bim-title">
+		<div class="wrap">
+			<div class="bim-head rise">
+				<div>
+					<div class="label">建筑模型 · 自动生成</div>
+					<h2 id="bim-title"><span class="nw">从实景网格，</span><span class="nw">自动生成建筑模型</span></h2>
+				</div>
+				<p>平台在实景网格上量出每栋楼的轮廓、标高和圆弧半径，拼成参数化的建筑形体，再加上立面和屋面构件，导出 IFC。模型与实景在同一个坐标系里，随时可以叠在一起核对。</p>
+			</div>
+			<div class="cmp rise" data-cmp tabindex="0" role="slider" aria-label="Compare the reality mesh of Li Ka Shing Tower with its generated building model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+				<img src="assets/bimr.webp" alt="Li Ka Shing Tower in the textured reality mesh" loading="lazy">
+				<img class="after" src="assets/bimm.webp" alt="The same tower as an automatically generated building model with facade bands, windows and roof" loading="lazy">
+				<i class="rule" aria-hidden="true"></i>
+				<span class="knob" aria-hidden="true">‹ 拖动对比 ›</span>
+				<span class="lab l">实景网格</span><span class="lab r">自动生成的建筑模型</span>
+			</div>
+			<div class="facts rise">
+				<div><h3>从实景量取</h3><p>轮廓、楼层标高、圆弧半径都直接从网格里测，不依赖图纸。</p></div>
+				<div><h3>参数化，可编辑</h3><p>李嘉诚楼由 30 个形体模块组成，改一个参数，整栋楼跟着更新。</p></div>
+				<div><h3>开放格式</h3><p>导出 IFC4，构件可按接口查询，直接接入能耗和外立面改造分析。</p></div>
+			</div>
+		</div>
+	</section>
+
+	<section id="solar" aria-labelledby="solar-title">
+		<div class="wrap center rise">
+			<div class="label">屋顶光伏</div>
+			<h2 id="solar-title"><span class="nw">从屋顶上的阳光，</span><span class="nw">到每一块组件的发电</span></h2>
+			<p>五个步骤在同一个平台里完成，每一步直接用上一步的结果。</p>
+		</div>
+		<div class="wrap rise">
+			<div class="tour-tabs" role="tablist" aria-label="Solar workflow">
+				<button type="button" role="tab" id="t1" aria-controls="p1" aria-selected="true"><i>01</i>发电潜力</button>
+				<button type="button" role="tab" id="t2" aria-controls="p2" aria-selected="false" tabindex="-1"><i>02</i>屋顶识别</button>
+				<button type="button" role="tab" id="t3" aria-controls="p3" aria-selected="false" tabindex="-1"><i>03</i>组件排布</button>
+				<button type="button" role="tab" id="t4" aria-controls="p4" aria-selected="false" tabindex="-1"><i>04</i>并网预测</button>
+				<button type="button" role="tab" id="t5" aria-controls="p5" aria-selected="false" tabindex="-1"><i>05</i>无人机巡检</button>
+			</div>
+
+			<div class="panel" role="tabpanel" id="p1" aria-labelledby="t1">
+				<div class="media"><img src="assets/potential.webp" alt="Annual solar potential on every face of the campus, from blue to orange" loading="lazy"></div>
+				<div class="copy">
+					<h3>每个面一年能接收多少阳光</h3>
+					<p>物理模型沿着全年的太阳轨迹，算出校园每个网格面受到的辐照，周边楼宇的遮挡也算在内，再换算成发电潜力。</p>
+					<div class="stat"><b>7.6<small>GWh</small></b><span>屋顶组件的全年发电量</span></div>
+				</div>
+			</div>
+			<div class="panel" role="tabpanel" id="p2" aria-labelledby="t2" hidden>
+				<div class="media">
+					<div class="cmp" data-cmp tabindex="0" role="slider" aria-label="Compare the reality model with semantic labels" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+						<img src="assets/mesh.webp" alt="Textured reality mesh of the campus" loading="lazy">
+						<img class="after" src="assets/seg.webp" alt="The mesh coloured by semantic class" loading="lazy">
+						<i class="rule" aria-hidden="true"></i>
+						<span class="knob" aria-hidden="true">‹ ›</span>
+						<span class="lab l">实景</span><span class="lab r">语义标签</span>
+					</div>
+				</div>
+				<div class="copy">
+					<h3>找出真正能装的屋顶</h3>
+					<p>语义分割把建筑屋面和地面、植被分开。平台再把连通的平地合成一块块屋顶，太小或太碎的直接排除。</p>
+					<div class="stat"><b>372<small>块</small></b><span>可安装的屋顶平地</span></div>
+				</div>
+			</div>
+			<div class="panel" role="tabpanel" id="p3" aria-labelledby="t3" hidden>
+				<div class="media">
+					<div class="cmp" data-cmp tabindex="0" role="slider" aria-label="Compare connected roof patches with the module layout" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+						<img src="assets/roofs.webp" alt="Connected flat roof patches, each in its own colour" loading="lazy">
+						<img class="after" src="assets/layout.webp" alt="PV modules laid out row by row on the flat roofs" loading="lazy">
+						<i class="rule" aria-hidden="true"></i>
+						<span class="knob" aria-hidden="true">‹ ›</span>
+						<span class="lab l">屋顶平地</span><span class="lab r">组件排布</span>
+					</div>
+				</div>
+				<div class="copy">
+					<h3><span class="nw">按真实组件尺寸，</span><span class="nw">一块块排上去</span></h3>
+					<p>离屋面边缘留出间距，不平的地方不放，倾角和行距按冬至日的影子留够。阴影大的组件和太小的屋顶，拖一下滑块就筛掉。</p>
+					<div class="stat"><b>14,040<small>块</small></b><span>430 W 组件，装机 6.0 MWp</span></div>
+				</div>
+			</div>
+			<div class="panel" role="tabpanel" id="p4" aria-labelledby="t4" hidden>
+				<div class="media">
+					<div class="chart">
+						<div class="chart-head"><span><b>校园并网功率</b>，10 月 31 日，多云</span><span>06:00 – 18:00</span></div>
+						<svg id="day" viewBox="0 0 640 260" role="img" aria-label="Campus PV grid feed over one partly cloudy day, peaking near 3.1 MW at noon"></svg>
+					</div>
+				</div>
+				<div class="copy">
+					<h3><span class="nw">每块组件，</span><span class="nw">每十分钟算一次出力</span></h3>
+					<p>太阳位置、楼宇之间的阴影和当天的云量逐块计算，汇总成整个校园送入电网的功率。中午的凹陷来自过境的云。</p>
+					<div class="stat"><b>3.1<small>MW</small></b><span>当天并网峰值，12:00</span></div>
+				</div>
+			</div>
+			<div class="panel" role="tabpanel" id="p5" aria-labelledby="t5" hidden>
+				<div class="media"><img src="assets/inspect.webp" alt="Drone hovering over a flagged roof shown in a thermal colour ramp" loading="lazy"></div>
+				<div class="copy">
+					<h3>只飞需要飞的屋顶</h3>
+					<p>实测低于预测的组串会被标出来。平台把这些屋顶连成一条最短航线，无人机悬停拍红外，热斑、二极管故障和积灰定位到组件编号，自动生成工单。</p>
+					<div class="stat"><b>12<small>/ 12</small></b><span>异常组串全部定位，航线 3.0 公里</span></div>
+				</div>
+			</div>
+			<p class="tour-foot">画面均为平台实时渲染。</p>
+		</div>
+	</section>
+
+	<section class="next" id="next" aria-labelledby="next-title">
+		<div class="wrap">
+			<div class="next-head rise">
+				<div>
+					<div class="label">更多分析</div>
+					<h2 id="next-title"><span class="nw">同一套数据，</span><span class="nw">接下来回答别的问题</span></h2>
+				</div>
+				<p>光伏是第一个上线的模块。网格、标签和建筑构件已经在那里，新的分析不需要再飞一次。</p>
+			</div>
+			<div class="cards rise">
+				<article class="card">
+					<img src="assets/plan.webp" alt="" loading="lazy">
+					<div class="body"><h3>风环境</h3><p>街道里的风速和行人舒适度，建筑模型直接作为计算域。</p><span class="soon">规划中</span></div>
+				</article>
+				<article class="card">
+					<img src="assets/potential.webp" alt="" loading="lazy">
+					<div class="body"><h3>建筑能耗</h3><p>围护结构、窗墙比和太阳得热，逐栋估算空调负荷。</p><span class="soon">规划中</span></div>
+				</article>
+				<article class="card">
+					<img src="assets/bimiso.webp" alt="" loading="lazy" style="object-position:50% 30%">
+					<div class="body"><h3>外立面改造</h3><p>外墙面积、窗、阳台、空调外机，从建筑模型统计翻新工程量。</p><span class="soon">规划中</span></div>
+				</article>
+			</div>
+		</div>
+	</section>
+
+	<section aria-labelledby="road-title">
+		<div class="wrap center rise">
+			<div class="label">路线</div>
+			<h2 id="road-title"><span class="nw">先看清一片街区，</span><span class="nw">再看清整座老城</span></h2>
+		</div>
+		<div class="wrap rise">
+			<div class="road">
+				<div><div class="when">现在</div><h3>光伏全流程</h3><p>航测、实景、分割、建筑模型、排布、并网预测和巡检，在一个平台里跑通。</p></div>
+				<div><div class="when">下一步</div><h3>风、能耗、外立面</h3><p>在同一套底座上接入新模块，建筑模型从试点楼扩展到整个校园。</p></div>
+				<div><div class="when">远期</div><h3>老城更新的数字底座</h3><p>从理大和红磡出发，一片片街区接入，服务香港的城市更新。</p></div>
+			</div>
+		</div>
+	</section>
+
+	<section class="end" id="contact" aria-labelledby="end-title">
+		<div class="wrap rise">
+			<h2 id="end-title">想看看你的街区？</h2>
+			<p>可以用你已有的航测数据，也可以先飞一次，演示从实景三维、建筑模型到屋顶光伏方案的完整过程。</p>
+			<div class="acts"><a class="btn" href="#contact">预约演示</a></div>
+		</div>
+	</section>
+</main>
+
+<footer>
+	<div class="wrap">
+		<div class="wordmark" aria-hidden="true">PolyU<span>Twin</span></div>
+		<div class="foot">
+			<p><b>数据来源。</b>画面和数字来自平台 2026 年 11 月 2 日的同一次运行。实景三维为地政总署数据（图幅 11-NW-25C）；全年潜力为 MidMonthPV 物理模拟；语义标签为 UrbanVerse；组件按 430 W、1722 × 1134 mm 计算。</p>
+			<p><b>演示说明。</b>并网曲线的天气为合成情景，巡检中的组件故障为演示注入。建筑模型目前为单栋试点（李嘉诚楼），已完成主体形体、立面与屋面，墙和楼板构件的拆分在进行中；风环境、建筑能耗、外立面改造为规划中的模块。</p>
+		</div>
+		<div class="legal"><span>香港理工大学 · 红磡</span><span>© 2026 PolyU Twin</span></div>
+	</div>
+</footer>
+
+<script>
+( () => {
+
+	const reduce = matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
+	const header = document.querySelector( 'header' );
+	const onScroll = () => header.classList.toggle( 'scrolled', scrollY > 8 );
+	addEventListener( 'scroll', onScroll, { passive: true } );
+	onScroll();
+
+	// 滚动淡入
+	const rises = document.querySelectorAll( '.rise' );
+	if ( reduce || ! ( 'IntersectionObserver' in window ) ) rises.forEach( e => e.classList.add( 'in' ) );
+	else {
+
+		const io = new IntersectionObserver( es => es.forEach( e => {
+
+			if ( e.isIntersecting ) {
+
+				e.target.classList.add( 'in' );
+				io.unobserve( e.target );
+
+			}
+
+		} ), { rootMargin: '0px 0px -8% 0px', threshold: 0.08 } );
+		rises.forEach( e => io.observe( e ) );
+
+	}
+
+	// 前后对比：拖动或方向键移动分隔线，初始在中间
+	document.querySelectorAll( '[data-cmp]' ).forEach( cmp => {
+
+		let k = 0.5;
+		const set = v => {
+
+			k = Math.min( 1, Math.max( 0, v ) );
+			cmp.style.setProperty( '--k', k.toFixed( 4 ) );
+			cmp.setAttribute( 'aria-valuenow', Math.round( k * 100 ) );
+
+		};
+		const fromPointer = e => {
+
+			const r = cmp.getBoundingClientRect();
+			set( ( e.clientX - r.left ) / r.width );
+
+		};
+		cmp.addEventListener( 'pointerdown', e => {
+
+			cmp.setPointerCapture( e.pointerId );
+			fromPointer( e );
+			const move = ev => fromPointer( ev );
+			const up = () => {
+
+				cmp.removeEventListener( 'pointermove', move );
+				cmp.removeEventListener( 'pointerup', up );
+
+			};
+			cmp.addEventListener( 'pointermove', move );
+			cmp.addEventListener( 'pointerup', up );
+
+		} );
+		cmp.addEventListener( 'keydown', e => {
+
+			if ( e.key === 'ArrowLeft' ) set( k - 0.05 );
+			else if ( e.key === 'ArrowRight' ) set( k + 0.05 );
+			else return;
+			e.preventDefault();
+
+		} );
+
+	} );
+
+	// 光伏导览标签页
+	const tabs = [ ...document.querySelectorAll( '[role="tab"]' ) ];
+	const select = tab => {
+
+		tabs.forEach( t => {
+
+			const on = t === tab, panel = document.getElementById( t.getAttribute( 'aria-controls' ) );
+			t.setAttribute( 'aria-selected', String( on ) );
+			t.tabIndex = on ? 0 : - 1;
+			panel.hidden = ! on;
+			panel.classList.toggle( 'show', on );
+
+		} );
+		tab.scrollIntoView( { block: 'nearest', inline: 'nearest' } );
+
+	};
+	tabs.forEach( ( t, i ) => {
+
+		t.addEventListener( 'click', () => select( t ) );
+		t.addEventListener( 'keydown', e => {
+
+			const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? - 1 : 0;
+			if ( ! d ) return;
+			e.preventDefault();
+			const n = tabs[ ( i + d + tabs.length ) % tabs.length ];
+			select( n );
+			n.focus();
+
+		} );
+
+	} );
+
+	// 一天的并网功率（平台第 08 步，31 Oct 2026，多云情景，真太阳时，kW）
+	const DAY = [ [ 6, 0 ], [ 6.25, 0 ], [ 6.5, 2 ], [ 6.75, 76 ], [ 7, 213 ], [ 7.25, 385 ], [ 7.5, 598 ], [ 7.75, 728 ], [ 8, 976 ], [ 8.25, 1076 ], [ 8.5, 1245 ], [ 8.75, 1328 ],
+		[ 9, 1825 ], [ 9.25, 1955 ], [ 9.5, 2121 ], [ 9.75, 1858 ], [ 10, 2049 ], [ 10.25, 1747 ], [ 10.5, 1887 ], [ 10.75, 1918 ], [ 11, 2687 ], [ 11.25, 2839 ], [ 11.5, 2986 ], [ 11.75, 2864 ],
+		[ 12, 3073 ], [ 12.25, 2712 ], [ 12.5, 2063 ], [ 12.75, 1611 ], [ 13, 1553 ], [ 13.25, 1631 ], [ 13.5, 1450 ], [ 13.75, 1792 ], [ 14, 2039 ], [ 14.25, 2278 ], [ 14.5, 1834 ], [ 14.75, 1798 ],
+		[ 15, 1571 ], [ 15.25, 1553 ], [ 15.5, 1161 ], [ 15.75, 1170 ], [ 16, 1041 ], [ 16.25, 954 ], [ 16.5, 650 ], [ 16.75, 466 ], [ 17, 257 ], [ 17.25, 95 ], [ 17.5, 2 ], [ 17.75, 0 ], [ 18, 0 ] ];
+	const svg = document.getElementById( 'day' ), NS = 'http://www.w3.org/2000/svg';
+	const W = 640, H = 260, L = 44, R = 8, T = 22, B = 28, YMAX = 3500;
+	const X = h => L + ( h - 6 ) / 12 * ( W - L - R ), Y = v => H - B - v / YMAX * ( H - T - B );
+	const el = ( tag, attrs, text ) => {
+
+		const n = document.createElementNS( NS, tag );
+		for ( const a in attrs ) n.setAttribute( a, attrs[ a ] );
+		if ( text !== undefined ) n.textContent = text;
+		svg.appendChild( n );
+		return n;
+
+	};
+	for ( const v of [ 0, 1000, 2000, 3000 ] ) {
+
+		el( 'line', { class: 'grid', x1: L, x2: W - R, y1: Y( v ), y2: Y( v ) } );
+		el( 'text', { class: 'ax', x: L - 8, y: Y( v ) + 4, 'text-anchor': 'end' }, v ? `${v / 1000} MW` : '0' );
+
+	}
+	for ( const h of [ 6, 9, 12, 15, 18 ] ) el( 'text', { class: 'ax', x: X( h ), y: H - 6, 'text-anchor': 'middle' }, `${String( h ).padStart( 2, '0' )}:00` );
+	const pts = DAY.map( ( [ h, v ] ) => `${X( h ).toFixed( 1 )},${Y( v ).toFixed( 1 )}` );
+	el( 'path', { class: 'area', d: `M${X( 6 )},${Y( 0 )} L${pts.join( ' L' )} L${X( 18 )},${Y( 0 )} Z` } );
+	el( 'path', { class: 'curve', d: `M${pts.join( ' L' )}` } );
+	el( 'circle', { class: 'peak', cx: X( 12 ), cy: Y( 3073 ), r: 4 } );
+	el( 'text', { class: 'peak-t', x: X( 12 ), y: Y( 3073 ) - 10, 'text-anchor': 'middle' }, '3.1 MW' );
+
+} )();
+</script>
+</body>
+</html>
